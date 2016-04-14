@@ -1,0 +1,7 @@
+This is a simple idea to calculate the Fisher matrix for a Pulsar Timing
+Array looking for a stocastic background. The idea is simply to calculate a
+Fisher matrix for this and constrain things like the slope and amplitude
+of a power law GW background e.g. from inflation. Extensions would look at
+stocatic backgrounds from BH-BH inspirals and see how well the angular
+moments of this background could be constrained.
+
