@@ -6,6 +6,7 @@ import numpy as np
 import numpy.random as npr
 from math import sin, cos
 import matplotlib.pyplot as plt
+import scipy.integrate
 
 class PTA:
     def __init__(self, N = 3, T = 5.0, SNR = 10.0):
@@ -191,17 +192,22 @@ class PTA:
         #For constant time sampling at rate deltat integral is
         #just dot product multipied by time interval
         #Requires time sampling to be small compared to GW period
-        #to get sensible results
+        #to get sensible results. Differs from Simpson at mildly
+        #significant level though, so shouldn't use!
         
         inner = np.dot(x, y) * self.deltat
+        
+        #More accurate but slower via Simpson's rule
+        #inner = scipy.integrate.simps(x * y, dx = self.deltat)
 
+        
         #Then normalise correctly
         inner *= 2.0 / S0
 
         return inner
 
 
-    def residualDerivatives(self, t, params, pulsar):
+    def residualDerivatives(self, t, params, pulsar, steps = None):
         """
         Calculate derivatives of timing residuals. Use a five point stencil
         to get good accuracy on the derivatives
@@ -213,13 +219,16 @@ class PTA:
         #7 parameters - establish derivative step size first
         # relative steps for dimensional parameters
         # absolute steps for angles
-        dR = 0.1 * R
-        dtheta = 0.1
-        dphi = 0.1
-        dpsi = 0.1
-        dinc = 0.1
-        df = 0.01 * f
-        dPhi0 = 0.1
+        if steps is None:
+            dR = 0.1 * R
+            dtheta = 0.1
+            dphi = 0.1
+            dpsi = 0.1
+            dinc = 0.1
+            df = 0.01 * f
+            dPhi0 = 0.1
+        else:
+            dR, dtheta, dphi, dpsi, dinc, df, dPhi0 = steps
         
         dparams = (dR, dtheta, dphi, dpsi, dinc, df, dPhi0)
 
@@ -251,7 +260,35 @@ class PTA:
             derivatives.append(derivative)
 
         return derivatives
+    
 
+    def checkDerivatives(self, indx = 0):
+        """
+        Test behaviour of derivatives
+        """
+
+        t = self.t
+        params = self.params
+        pulsar = self.pulsars[0]
+        R, theta, phi, psi, inc, f, Phi0 = params
+
+        factor = 10.0
+        for i in range(10):
+            factor /= 2.0
+
+            dR = 0.01 * R * factor
+            dtheta = 0.01 * factor
+            dphi = 0.01 * factor
+            dpsi = 0.01 * factor
+            dinc = 0.01 * factor
+            df = 0.001 * f * factor
+            dPhi0 = 0.01 * factor
+            steps = (dR, dtheta, dphi, dpsi, dinc, df, dPhi0)
+
+            derivatives = self.residualDerivatives(t, params, pulsar, steps)
+            print steps[indx], factor
+            print np.sum(derivatives[indx])
+        
 
     def fisherMatrixSingle(self, params, pulsar, SNR):
         """
