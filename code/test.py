@@ -25,10 +25,13 @@ def testSingle(N = 3, nsources = 1000, PTA = None):
 
     #Get median errors
     errors = np.array(errors)
+    labels = list(PTA.labels)
+    labels.append("dOmega")
     print errors.shape
 
     mederrors = []
-    for i in range(7):
+    for i in range(errors.shape[1]):
+        print i
         svec = sorted(errors[:,i])
         mederror = np.median(svec)
 
@@ -38,7 +41,7 @@ def testSingle(N = 3, nsources = 1000, PTA = None):
         lowval = svec[lowindx]
         highval = svec[highindx]
         mederrors.append(mederror)
-        print PTA.labels[i], mederror, np.array([lowval, highval]) - mederror
+        print labels[i], mederror, np.array([lowval, highval]) - mederror
 
     return errors, mederrors, PTA
 
@@ -61,7 +64,7 @@ def test():
         errors, mederrors, PTA = testSingle(N, nsources, PTA)
         R = PTA.params[0]
         dRR = mederrors[0] / R
-        dOmega = mederrors[1] * mederrors[2] * (360/np.pi) ** 2
+        dOmega = mederrors[7]
         result = (N, dOmega, dRR, mederrors[4], mederrors[3], mederrors[5]/1.0e-10, mederrors[6])
 
         resultstr = "%i, %f, %f, %f, %f, %f, %f \n" % result

@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import scipy.integrate
 
 class PTA:
-    def __init__(self, N = 3, T = 5.0, SNR = 10.0):
+    def __init__(self, N = 3, T = 10.0, SNR = 10.0):
         """
         Pulsar timing array with N pulsars sampled for T years
         """
-        year = np.pi * 1.0e7
+        year = 3.1536e7   #year in seconds
         self.T = T * year  #Length of timing in seconds
 
         #Normalise noise by SNR per pulsar
@@ -68,12 +68,20 @@ class PTA:
         if f is None:
             f = self.params[5]
 
+        # Uniform distribution of locations on sky
         mu = npr.uniform(-1.0, 1.0)
         theta = np.arccos(mu)
-        phi = npr.uniform(0.0, 2.0 * np.pi)
-        psi = npr.uniform(0.0, 2.0 * np.pi)
-        inc = npr.uniform(0.0, 2.0 * np.pi)
-        Phi0 = npr.uniform(0.0, 2.0 * np.pi)
+        phi = npr.uniform(-np.pi, np.pi)
+
+        #Gravitational polarisation varies over 2pi (I think)
+        psi = npr.uniform(-np.pi, np.pi)
+
+        #inclination angle needs to be uniform in cos(inc)
+        muinc = npr.uniform(-1.0, 1.0)
+        inc = np.arccos(muinc)
+
+        #Initial phase over 2pi
+        Phi0 = npr.uniform(-np.pi, np.pi)
         
         params = np.array([R, theta, phi, psi, inc, f, Phi0])
         return params
@@ -118,6 +126,7 @@ class PTA:
 
         # Phi from Eq (23)
         # Restrict to case of constant frequency for the moment
+        # Note that need to include zero point here (I think)
         Phi = 2.0 * np.pi * f * t
 
         #calculate timing residual for single pulsar from Eq (31)
@@ -220,13 +229,13 @@ class PTA:
         # relative steps for dimensional parameters
         # absolute steps for angles
         if steps is None:
-            dR = 0.1 * R
-            dtheta = 0.1
-            dphi = 0.1
-            dpsi = 0.1
-            dinc = 0.1
-            df = 0.01 * f
-            dPhi0 = 0.1
+            dR = 0.01 * R
+            dtheta = 0.01
+            dphi = 0.01
+            dpsi = 0.01
+            dinc = 0.01
+            df = 0.001 * f
+            dPhi0 = 0.01
         else:
             dR, dtheta, dphi, dpsi, dinc, df, dPhi0 = steps
         
@@ -377,7 +386,7 @@ class PTA:
         Draw a random pulsar location from a uniform distribution
         """
         mu = npr.uniform(-1.0, 1.0)
-        phi = npr.uniform(0.0, 2.0 * np.pi)
+        phi = npr.uniform(-np.pi, np.pi)
         pulsar = np.array([np.arccos(mu), phi])      
 
         return pulsar
@@ -398,4 +407,112 @@ class PTA:
             #print self.labels[i], param, np.sqrt(ifisher[i][i])
             errors.append(np.sqrt(ifisher[i][i]))
 
+        #Also calculate solid angle error, which is complicated
+        theta = params[1]
+        phi = params[2]
+
+        #Need Fisher errors on theta and phi
+        dtheta = errors[1]
+        dphi = errors[2]
+
+        #Need correlation coefficient for theta-phi
+        cThetaPhi = ifisher[1][2] / (dtheta * dphi)
+
+        #Error for dOmega is a little ambiguous. Sesana doesn't
+        #agree with the Cutler reference they cite and Sesana
+        #formula often involves sqrt of negative number.
+        #Sesana Eq (39) expression also seems to be missing dtheta and
+        #dphi factors in the second term
+        
+        #I'll solve this by taking absolute value 
+        dOmega = np.power(sin(theta) * dtheta * dphi, 2.0)
+        dOmega -= np.power(sin(theta) * cThetaPhi * dtheta * dphi, 2.0)
+        dOmega = 2.0 * np.pi * np.sqrt(np.abs(dOmega))
+
+        #om1 = dOmega
+        #Cutler formulation Eq(3.7) makes more sense and gives similar values
+        #dOmega = (1.0 - cThetaPhi) * sin(theta) * dtheta * dphi
+        #dOmega = 2.0 * np.pi * dOmega
+        #print "Test:", dOmega, om1, om1/dOmega
+        
+        #Finally convert from steradians to sq.deg.
+        dOmega *= np.power(180.0 / np.pi, 2.0)
+
+        #And add this to errors. Slight concern that could get confused
+        #since labels don't match here
+        errors.append(dOmega)
+
         return errors
+
+    def correlationMatrix(self, fisher = None, make_fig = False, save_fig = False):
+        """
+        Calculate the matrix of correlation coefficients i.e. inverse fisher
+        matrix elements normalised by the diagonal elements
+        """
+
+        if fisher is None:
+            fisher = self.fisher
+            
+        ifisher = np.linalg.inv(fisher)
+
+        norms = 1.0 / np.sqrt(np.diag(ifisher))
+
+        #Next line is a little odd, but seems to work to
+        #calculate (38b) in single step
+        correlation_matrix = (ifisher * norms).T * norms
+
+        #Optionally display a visual representation of the correlation matrix
+        if make_fig:
+            #Black and white chess board plot of correlation coefficients.
+            #vmin/vmax fix colour range between -1 and 1
+            plt.imshow(correlation_matrix, interpolation='none', cmap = 'gray', vmin= -1, vmax = 1)
+            plt.colorbar()
+            locs, labels = plt.xticks()
+            plt.xticks(np.arange(len(self.labels)),self.labels)
+            plt.yticks(np.arange(len(self.labels)),self.labels)
+
+            #Add a little information, although really needs a sky plot to be
+            #fully informative
+            titlestr = "%i Pulsars and source at (%f, %f)" % (
+                len(self.pulsars), self.params[1], self.params[2])
+            plt.title(titlestr)
+
+            if save_fig:
+                filename = "correlation_matrix.eps"
+                plt.savefig(filename)
+            else:
+                plt.show()
+                
+            plt.close()
+
+        return correlation_matrix
+
+    def skyplot(self):
+        """
+        Display pulsars on the sky. Internal coordinate system is (theta, phi)
+        which is presumable right ascencion and declination
+        """
+
+        data = np.array(self.pulsars)
+        Y = data[:, 0]   #theta
+        X = data[:, 1]   #phi
+
+        #Need Y between [-pi/2, pi/2], but internally calculated in [0, pi]
+        #by the arccos function. Subtract pi/2 to put on spherical coordinates
+        # cos(0) is straight up in coordinates, corresponding to 90N on sphere
+        Y = Y - np.pi/2.0
+
+        plt.figure()
+        ax = plt.subplot(111, projection = 'mollweide')
+        ax.scatter(X, Y)
+        ax.grid(True)
+
+        #Add GW source
+        theta = self.params[1] - np.pi/2
+        phi = self.params[2]
+        ax.scatter(phi, theta, color = 'r', marker = '^', s=100)
+
+        plt.show()
+
+
+        
